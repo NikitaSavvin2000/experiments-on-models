@@ -1,0 +1,13 @@
+cnn0_units: 128
+cnn1_units: 256
+lstm0_units: 30
+lstm1_units: 20
+lstm2_units: 10
+lag: 4
+points_per_call: 16
+regularizers_l2: 0.2
+recurrent_dropout_rate: 0.2
+activation: 'relu'
+optimizer: 'adam'
+epochs: 3
+points_to_predict: 288
