@@ -199,25 +199,39 @@ points_per_call = params['points_per_call']
 points_to_predict = params['points_to_predict']
 
 
-model_type_chitecture = ["LSTM", "Bi-LSTM"]
+model_type_chitecture = ["Bi-LSTM"]
 
-case_A = ['consumption','year', 'month', 'day','hour', 'minute']
-case_A_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature']
-case_A_lag_3h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_3h']
-case_A_lag_6h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_6h']
-case_A_lag_12h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_12h']
-case_A_lag_15h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_15h']
+# case_A = ['consumption','year', 'month', 'day','hour', 'minute']
+# case_A_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature']
+# case_A_lag_3h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_3h']
+# case_A_lag_6h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_6h']
+# case_A_lag_12h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_12h']
+# case_A_lag_15h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_15h']
+
+case_A = ['consumption', 'year', 'month', 'day','hour', 'minute']
+case_B = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
+case_C = ['consumption', "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
+case_D = ['consumption', "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos"]
+case_E = ['consumption', "year", "month", "day", "week", "day_of_week", "hour", "minute", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
 
 
 train_col_dict = {
-    'case_A': case_A,
-    'case_A_temperature': case_A_temperature,
-    'case_A_lag_3h_temperature': case_A_lag_3h_temperature,
-    'case_A_lag_6h_temperature': case_A_lag_6h_temperature,
-    'case_A_lag_12h_temperature': case_A_lag_12h_temperature,
-    'case_A_lag_15h_temperature': case_A_lag_15h_temperature,
+    # 'case_A': case_A,
+    "case_B": case_B,
+    # 'case_C': case_C,
+    # "case_D": case_D,
+    # 'case_E': case_E,
+
 
 }
+#
+# random_seed_dict = {
+#     "1": 1,
+#     "2": 2,
+# }
+
+random_seed_dict = {str(i): i for i in range(61, 101)}
+
 
 experements = {
     # 'Australia Bundoora': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTl3ZMKUEqYeXJe1b8A4IbfYIKjWlm0lR61glDoXOEfHxsmDUv1ZZ2IK2GpjkH2fZ6fvX3NaCOryqzW/pub?gid=751874949&single=true&output=csv',
@@ -227,7 +241,8 @@ experements = {
     # 'Morocco Zone 2': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQT1DfqAB5Yec8MIQ_E5A8w-SXNcRmTwbXsv2W-ZT1ZcXN_G83BHlb6QBgnWkO-MpH3oVgfLoE0SnLx/pub?gid=1952392108&single=true&output=csv',
     # 'Morocco Zone 3': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSHw5k7n3_RM6ksGbvdQJsa1i9-zF-18CFLCFnXFkCxQwqLcQ4Wu2_8EF2H1lF02ih2NLL9BDecFzQ/pub?gid=1952392108&single=true&output=csv',
     # "load_consumption_2025": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRj0_FRhEl3AuDjtTSeI2IHHH4qpEirHLnBFSu6UBebdnHpDkdJvzDS6pBKSlPAfzxHgXloFfFFv0vW/pub?gid=167706239&single=true&output=csv',
-    "load_consumption_temp": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRilfR_8jYrc_n4nhWtSTkLJ3wxhsoNpMAza1ympr5nkiX_dTKuzOMMxVvDLntjGD-lngpFZmaSd0pr/pub?gid=1656562660&single=true&output=csv"
+    # "load_consumption_temp": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRilfR_8jYrc_n4nhWtSTkLJ3wxhsoNpMAza1ympr5nkiX_dTKuzOMMxVvDLntjGD-lngpFZmaSd0pr/pub?gid=1656562660&single=true&output=csv",
+    "load_consumption_real": "load_consumption_real"
 }
 
 
@@ -241,7 +256,9 @@ for model_type in model_type_chitecture:
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
 
-    for dir_name, col_for_train in train_col_dict.items():
+    for dir_name, random_seed in random_seed_dict.items():
+
+        col_for_train = case_B
 
         dir = os.path.join(model_dir, dir_name)
         if not os.path.exists(dir):
@@ -254,10 +271,12 @@ for model_type in model_type_chitecture:
         shutil.copy(cur_running_path, destination_snapshot)
 
         for experement_name, csv_train_data in experements.items():
-            df_all_data = pd.read_csv(csv_train_data)
-            # df_all_data = fetch_data_from_db()
+            # df_all_data = pd.read_csv(csv_train_data)
+            df_all_data = fetch_data_from_db()
 
-            df_all_data = df_all_data.rename(columns={"time": "Datetime"})
+            # df_all_data = df_all_data.iloc[-(288*31*3):]
+
+            df_all_data = df_all_data.rename(columns={"datetime": "Datetime"})
 
             df_all_data['Datetime'] = pd.to_datetime(df_all_data['Datetime']).apply(lambda x: x.replace(second=0))
 
@@ -287,17 +306,19 @@ for model_type in model_type_chitecture:
             # df_all_data_norm['lcr'] = df_all_data_norm['lcr'].shift(7)
             # df_all_data_norm = df_all_data_norm[8:]
             # df_all_data_norm = df_all_data_norm.reset_index()
+            #
+            # df_all_data_norm["temperature_lag_3h"] = df_all_data_norm["temperature"].shift(-180)
+            # df_all_data_norm["temperature_lag_6h"] = df_all_data_norm["temperature"].shift(-360)
+            # df_all_data_norm["temperature_lag_12h"] = df_all_data_norm["temperature"].shift(-720)
+            # df_all_data_norm["temperature_lag_15h"] = df_all_data_norm["temperature"].shift(-900)
+            #
+            # df_all_data_norm = df_all_data_norm.dropna()
+            #
+            # df_all_data_norm = df_all_data_norm[:-(288*21 + 130)]
 
-            df_all_data_norm["temperature_lag_3h"] = df_all_data_norm["temperature"].shift(-180)
-            df_all_data_norm["temperature_lag_6h"] = df_all_data_norm["temperature"].shift(-360)
-            df_all_data_norm["temperature_lag_12h"] = df_all_data_norm["temperature"].shift(-720)
-            df_all_data_norm["temperature_lag_15h"] = df_all_data_norm["temperature"].shift(-900)
+            tf.keras.utils.set_random_seed(random_seed)
+            # tf.keras.utils.set_random_seed(39)
 
-            df_all_data_norm = df_all_data_norm.dropna()
-
-            df_all_data_norm = df_all_data_norm[:-(288*21 + 130)]
-
-            tf.keras.utils.set_random_seed(91)
             tf.config.experimental.enable_op_determinism()
 
             dir_name_experiment = f"{experement_name}"
