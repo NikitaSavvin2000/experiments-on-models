@@ -3,11 +3,12 @@ cnn1_units: 256
 lstm0_units: 30
 lstm1_units: 20
 lstm2_units: 10
-lag: 5
-points_per_call: 20
+lag: 4
+points_per_call: 16
 regularizers_l2: 0.2
 recurrent_dropout_rate: 0.20
 activation: 'relu'
 optimizer: 'adam'
 epochs: 5
 points_to_predict: 288
+target_date_str: "2023-11-28 21:00:00"

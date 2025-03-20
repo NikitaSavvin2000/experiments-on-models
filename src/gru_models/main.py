@@ -197,9 +197,10 @@ optimizer = params['optimizer']
 epochs = params['epochs']
 points_per_call = params['points_per_call']
 points_to_predict = params['points_to_predict']
+target_date_str = params["target_date_str"]
 
 
-model_type_chitecture = ["Bi-LSTM"]
+model_type_chitecture = ["LSTM", "Bi-LSTM"]
 
 # case_A = ['consumption','year', 'month', 'day','hour', 'minute']
 # case_A_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature']
@@ -208,12 +209,20 @@ model_type_chitecture = ["Bi-LSTM"]
 # case_A_lag_12h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_12h']
 # case_A_lag_15h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_15h']
 
-case_A = ['consumption', 'year', 'month', 'day','hour', 'minute']
-case_B = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
+# case_A = ['consumption', 'year', 'month', 'day','hour', 'minute']
+case_B = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year", "is_working_hours", "season", "season_sin", "season_cos", "quarter", "quarter_sin", "quarter_cos", "moon_phase"]
 case_C = ['consumption', "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
 case_D = ['consumption', "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos"]
 case_E = ['consumption', "year", "month", "day", "week", "day_of_week", "hour", "minute", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
 
+'''
+'year', 'month', 'day', 'week',
+       'day_of_week', 'hour', 'minute', 'second', 'hour_sin', 'hour_cos',
+       'day_of_week_sin', 'day_of_week_cos', 'week_sin', 'week_cos',
+       'month_sin', 'month_cos', 'part_of_day', 'is_night', 'is_weekend',
+       'day_of_year', 'is_working_hours', 'season', 'season_sin', 'season_cos',
+       'quarter', 'quarter_sin', 'quarter_cos', 'moon_phase',
+'''
 
 train_col_dict = {
     # 'case_A': case_A,
@@ -230,7 +239,7 @@ train_col_dict = {
 #     "2": 2,
 # }
 
-random_seed_dict = {str(i): i for i in range(61, 101)}
+# random_seed_dict = {str(i): i for i in range(61, 101)}
 
 
 experements = {
@@ -241,8 +250,8 @@ experements = {
     # 'Morocco Zone 2': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQT1DfqAB5Yec8MIQ_E5A8w-SXNcRmTwbXsv2W-ZT1ZcXN_G83BHlb6QBgnWkO-MpH3oVgfLoE0SnLx/pub?gid=1952392108&single=true&output=csv',
     # 'Morocco Zone 3': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSHw5k7n3_RM6ksGbvdQJsa1i9-zF-18CFLCFnXFkCxQwqLcQ4Wu2_8EF2H1lF02ih2NLL9BDecFzQ/pub?gid=1952392108&single=true&output=csv',
     # "load_consumption_2025": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRj0_FRhEl3AuDjtTSeI2IHHH4qpEirHLnBFSu6UBebdnHpDkdJvzDS6pBKSlPAfzxHgXloFfFFv0vW/pub?gid=167706239&single=true&output=csv',
-    # "load_consumption_temp": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRilfR_8jYrc_n4nhWtSTkLJ3wxhsoNpMAza1ympr5nkiX_dTKuzOMMxVvDLntjGD-lngpFZmaSd0pr/pub?gid=1656562660&single=true&output=csv",
-    "load_consumption_real": "load_consumption_real"
+    "load_consumption_temp": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRilfR_8jYrc_n4nhWtSTkLJ3wxhsoNpMAza1ympr5nkiX_dTKuzOMMxVvDLntjGD-lngpFZmaSd0pr/pub?gid=1656562660&single=true&output=csv",
+    # "load_consumption_real": "load_consumption_real"
 }
 
 
@@ -256,9 +265,7 @@ for model_type in model_type_chitecture:
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
 
-    for dir_name, random_seed in random_seed_dict.items():
-
-        col_for_train = case_B
+    for dir_name, col_for_train in train_col_dict.items():
 
         dir = os.path.join(model_dir, dir_name)
         if not os.path.exists(dir):
@@ -271,12 +278,20 @@ for model_type in model_type_chitecture:
         shutil.copy(cur_running_path, destination_snapshot)
 
         for experement_name, csv_train_data in experements.items():
-            # df_all_data = pd.read_csv(csv_train_data)
-            df_all_data = fetch_data_from_db()
+            df_all_data = pd.read_csv(csv_train_data)
+            # df_all_data = fetch_data_from_db()
 
-            # df_all_data = df_all_data.iloc[-(288*31*3):]
+            df_index = df_all_data.copy()
+            df_index["time"] = pd.to_datetime(df_index["time"])
+            target_date = pd.to_datetime(target_date_str)
+            df_index["time_diff"] = (df_index["time"] - target_date).abs()
+            nearest_index = df_index["time_diff"].idxmin()
+            print(f'>>> nearest_index = {nearest_index}')
+            df_all_data = df_all_data.iloc[:nearest_index+1]
+            print(df_all_data)
 
-            df_all_data = df_all_data.rename(columns={"datetime": "Datetime"})
+
+            df_all_data = df_all_data.rename(columns={"time": "Datetime"})
 
             df_all_data['Datetime'] = pd.to_datetime(df_all_data['Datetime']).apply(lambda x: x.replace(second=0))
 
@@ -292,6 +307,8 @@ for model_type in model_type_chitecture:
                 col_target="consumption",
                 json_list_df=json_list_df
             )
+            print(df_all_data_norm.head(3))
+            print(f'cols = {df_all_data_norm.columns}')
 
             # TODO Дата с которой делаем прогноз на сутки вперед ------------------------------------------------------------------
 
@@ -316,8 +333,8 @@ for model_type in model_type_chitecture:
             #
             # df_all_data_norm = df_all_data_norm[:-(288*21 + 130)]
 
-            tf.keras.utils.set_random_seed(random_seed)
-            # tf.keras.utils.set_random_seed(39)
+            # tf.keras.utils.set_random_seed(random_seed)
+            tf.keras.utils.set_random_seed(91)
 
             tf.config.experimental.enable_op_determinism()
 
