@@ -2,6 +2,7 @@ import os
 import ssl
 import torch
 import shutil
+import random
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
@@ -35,16 +36,15 @@ path_to_save = BASE_PATH
 
 LAG = 20
 HORIZON = 288
-BATCH_SIZE = 2
+BATCH_SIZE = 64
 EPOCHS = 3
 
 LR = 0.00001
-D_MODEL = 32
-NHEAD = 4
-NUM_LAYERS = 4
+D_MODEL = 8
+NHEAD = 8
+NUM_LAYERS = 8
 DROPOUT = 0.2
-points_per_call = LAG*2
-
+points_per_call = LAG*4
 
 measurement = 'load_consumption'
 
@@ -184,6 +184,19 @@ class TimeSeriesTransformer(nn.Module):
         return self.fc(x)
 
 
+SEED = 42
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+set_seed(SEED)
+
+
 df_init = fetch_data_from_db()
 
 df_init['datetime'] = df_init['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -235,7 +248,7 @@ X_tensor = torch.tensor(X, dtype=torch.float32)
 y_tensor = torch.tensor(y, dtype=torch.float32)
 
 dataset = TensorDataset(X_tensor, y_tensor)
-train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False)
 
 # ===========================================================
 
@@ -268,7 +281,7 @@ for epoch in progress_bar_epochs:
     print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {train_loss/len(train_loader):.4f}")
 
 
-model.eval()
+# model.eval()
 
 save_path = f"{path_to_save}/model_weights.pth"
 torch.save(model.state_dict(), save_path)
