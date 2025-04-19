@@ -1,8 +1,8 @@
 import os
 import ssl
+import math
 import torch
 import shutil
-import random
 import numpy as np
 import torch.nn as nn
 import torch.optim as optim
@@ -34,15 +34,15 @@ home_path = os.getcwd()
 path_to_save = BASE_PATH
 
 
-LAG = 20
+LAG = 5
 HORIZON = 288
-BATCH_SIZE = 64
-EPOCHS = 3
+BATCH_SIZE = 1
+EPOCHS = 1
 
 LR = 0.00001
-D_MODEL = 8
-NHEAD = 8
-NUM_LAYERS = 8
+D_MODEL = 64
+NHEAD = 4
+NUM_LAYERS = 4
 DROPOUT = 0.2
 points_per_call = LAG*4
 
@@ -147,54 +147,71 @@ class TimeSeriesDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 
+def generate_causal_mask(seq_len):
+    mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1)
+    return mask.masked_fill(mask == 1, float('-inf')).to(DEVICE)
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=5000):
+        super().__init__()
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.pe = pe.unsqueeze(0)  # [1, max_len, d_model]
+
+    def forward(self, x):
+        return x + self.pe[:, :x.size(1), :].to(x.device)
+
+
 class AttentionPooling(nn.Module):
     def __init__(self, d_model):
         super().__init__()
         self.attn = nn.Linear(d_model, 1)
 
-    def forward(self, x):
-        attn_weights = torch.softmax(self.attn(x), dim=1)  # Вычисляем веса
-        return (x * attn_weights).sum(dim=1)
+    def forward(self, x, return_weights=False):
+        attn_weights = torch.softmax(self.attn(x), dim=1)
+        pooled = (x * attn_weights).sum(dim=1)
+        return (pooled, attn_weights) if return_weights else pooled
 
 
 class TimeSeriesTransformer(nn.Module):
 
     def __init__(self, input_dim, d_model=D_MODEL, nhead=NHEAD, num_layers=NUM_LAYERS, dropout=DROPOUT, output_seq_len=points_per_call):
-        super(TimeSeriesTransformer, self).__init__()
+        super().__init__()
+        self.input_dim = input_dim
+        self.d_model = d_model
+    
         self.embedding = nn.Linear(input_dim, d_model)
-        self.dropout = nn.Dropout(dropout)
-        self.layer_norm = nn.LayerNorm(d_model)
-
-        encoder_layers = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout, batch_first=True, norm_first=True)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers=num_layers)
-
+        self.positional_encoding = PositionalEncoding(d_model)
+    
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dropout=dropout, batch_first=True, norm_first=True)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+    
         self.attn_pool = AttentionPooling(d_model)
         self.fc = nn.Linear(d_model, output_seq_len)
-
-    def forward(self, x):
+    
+    def generate_causal_mask(self, seq_len):
+        mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1)  # Верхнетреугольная матрица с нулями на главной диагонали
+        return mask.bool().to(next(self.parameters()).device)  # Перевод в bool и на тот же девайс, что и модель
+    
+    def forward(self, x, return_attn=False):
+        assert x.shape[-1] == self.input_dim, f"Expected input dim {self.input_dim}, but got {x.shape[-1]}"
+    
         x = self.embedding(x)
-        x = self.dropout(x)
-        x_residual = x
-
-        x = self.layer_norm(x)
-        x = self.transformer_encoder(x)
-
-        x = x + x_residual
-        x = self.attn_pool(x)
+        x = self.positional_encoding(x)
+    
+        causal_mask = self.generate_causal_mask(x.shape[1])
+        x = self.transformer_encoder(x, mask=causal_mask)
+    
+        if return_attn:
+            x, attn_weights = self.attn_pool(x, return_weights=True)
+            return self.fc(x), attn_weights
+    
         return self.fc(x)
-
-
-SEED = 42
-
-def set_seed(seed):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-set_seed(SEED)
 
 
 df_init = fetch_data_from_db()

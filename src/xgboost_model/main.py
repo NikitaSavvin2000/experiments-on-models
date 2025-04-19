@@ -1,6 +1,7 @@
 import os
 import ssl
 import yaml
+import json
 import shutil
 import numpy as np
 import pandas as pd
@@ -132,12 +133,16 @@ def forecast_XGBoost(
     """
     if norm_values:
 
-        possible_cols = [
-            col_target, 'year', 'month', 'day', 'week', 'day_of_week',
-            'hour', 'minute', 'second', 'hour_sin', 'hour_cos',
-            'day_of_week_sin', 'day_of_week_cos', 'week_sin', 'week_cos',
-            'month_sin', 'month_cos', 'part_of_day', 'is_night', 'is_weekend', 'day_of_year'
-        ]
+        possible_cols = [col_target,
+                         "year", "month", "day", "week", "day_of_week", "hour", "minute", "second",
+                         "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos",
+                         "week_sin", "week_cos", "month_sin", "month_cos",
+                         "part_of_day", "is_night", "is_weekend", "day_of_year",
+                         "is_working_hours", "season", "season_sin", "season_cos",
+                         "quarter", "quarter_sin", "quarter_cos", "moon_phase",
+                         "time_trend", "fourier_time",
+                         ]
+
 
     model_architecture_params = model_architecture_params[0]
 
@@ -230,40 +235,46 @@ message = "Getting data from the database"
 cast_logger(message=message)
 
 df = fetch_data_from_db()
+
+last = 288*31*3
+df = df.iloc[-last:]
+
 df_index = df.copy()
-
-target_date = pd.to_datetime("2025-03-18 06:00:00")
-
+target_date = pd.to_datetime("2025-02-12 16:00:00")
 df_index["time_diff"] = (df_index["datetime"] - target_date).abs()
-
 nearest_index = df_index["time_diff"].idxmin()
+date_start = pd.to_datetime("2024-10-01 00:00:00")
+df_index["time_diff"] = (df_index["datetime"] - date_start).abs()
 
-# df = df.iloc[:nearest_index+1]
-print(df)
+start_index = df_index["time_diff"].idxmin()
 
+
+# df = df[
+#     (df['datetime'].dt.time >= pd.to_datetime('17:30').time()) &
+#     (df['datetime'].dt.time <= pd.to_datetime('22:00').time())
+#     ]
+#
 df['datetime'] = df['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
-df_for_evaluation = df.iloc[-horizon:]
+# df = df.iloc[: nearest_index]
+
+
+
+print(df)
+
 
 
 json_list_df = df.to_dict(orient='records')
 message = "Vectorizing the data"
 cast_logger(message=message)
-df_all_data_norm, min_val, max_val = vectorization_request(
+df_all_data_norm_init, min_val, max_val = vectorization_request(
     col_time='datetime',
     col_target="load_consumption",
     json_list_df=json_list_df
 )
 
-df_train = df_all_data_norm.iloc[:-horizon]
-df_test = df_all_data_norm.iloc[-horizon:]
-df_test_none = df_test.copy()
-df_test_none['load_consumption'] = None
 
-df_all_data_norm = pd.concat([df_train, df_test_none], ignore_index=True)
-
-last_known_index = len(df_all_data_norm) - horizon - 1
-
+df_for_evaluation = df.iloc[-horizon:]
 
 col_target="load_consumption"
 evaluation_index = 1
@@ -295,7 +306,7 @@ objectives = [
 
 model_architecture_params = [{
     "objective": "reg:squarederror",
-    "n_estimators": 500,
+    "n_estimators": 1200,
     "learning_rate": 0.1,
     "max_depth": 15,
     "subsample": .9,
@@ -312,33 +323,75 @@ norm_values = True
 """
 
 #
-# Case_A = ["month", "day", "week", "day_of_week", "hour", "minute",
-#                  "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos",
-#                  "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
-#
-Case_B = [
-    "year", "month", "day", "day_of_year", "week", "day_of_week", "hour", "hour_cos", "day_of_week_sin", "day_of_week_cos",  "minute", "part_of_day", "is_night",
-]
-
 Case_A = [
-    "year", "month", "day", "day_of_year", "week", "day_of_week", "hour", "hour_sin", "hour_cos", "minute", "part_of_day", "is_night",
+    "hour_sin", "hour_cos"
 ]
+my_case = ["hour_cos",]
+
 
 cases = {
-    "Case_A": Case_A,
-    "Case_B": Case_B,
-    # "Case_C": Case_C,
-    # "Case_D": Case_D,
+    "my_case": my_case,
+
     # "Case_E": Case_E,
 }
 
-res_dict = {}
 
-for case_name, col_for_train in cases.items():
+df = pd.read_csv('/Users/nikitasavvin/Desktop/PhD/experiments-on-models/src/arima_model/experiments/b.csv')
+
+cases = {
+    f"{n}_point_minus": df_all_data_norm_init.iloc[:len(df_all_data_norm_init) - n]
+    for n in range(1, 289)
+}
+
+
+# common_features = [
+#     "day", "day_of_week", "day_of_year", "hour", "hour_cos", "hour_sin", "is_working_hours",
+#     "minute", "month", "moon_phase", "week", "week_cos", "year"
+# ]
+# optional_columns = [
+#     "day_of_week_sin", "day_of_week_cos", "week_sin", "month_sin", "month_cos", "part_of_day", "is_night",
+#     "is_weekend", "season", "season_sin", "season_cos"
+# ]
+#
+# num_optional = len(optional_columns)
+#
+# cases = {
+#     f"Case_{i+1}": sorted(common_features + list(map(str, np.random.choice(
+#         optional_columns,
+#         size=np.random.randint(5, min(15, num_optional + 1)), replace=False)))
+# )
+# for i in range(50)
+# }
+
+
+
+res_dict = {}
+#
+# with open(f"{experiments_path}/{dir_name}/cases.json", "w", encoding="utf-8") as f:
+#     json.dump(cases, f, indent=4, ensure_ascii=False)
+
+count = 0
+for case_name, df in cases.items():
+
+    df_for_eval = df_for_evaluation.iloc[-count:]
+
+    df_all_data_norm = df
+
+    df_train = df_all_data_norm.iloc[:-horizon]
+    df_test = df_all_data_norm.iloc[-horizon:]
+    df_test_none = df_test.copy()
+    df_test_none['load_consumption'] = None
+
+    df_all_data_norm = pd.concat([df_train, df_test_none], ignore_index=True)
+
+
+    last_known_index = len(df_all_data_norm) - horizon - 1
 
     BASE_PATH = f"{experiments_path}/{dir_name}/{case_name}"
 
     os.makedirs(BASE_PATH, exist_ok=True)
+
+    col_for_train = ["hour_cos",]
 
     col_for_train.insert(0, col_target)
 
@@ -354,7 +407,7 @@ for case_name, col_for_train in cases.items():
             model_architecture_params=model_architecture_params,
             norm_values=norm_values,
             col_for_train=col_for_train
-    ))
+        ))
 
 
 
@@ -419,7 +472,7 @@ for case_name, col_for_train in cases.items():
 
     cast_logger(message=MAPE)
 
-    fig_consumption.show()
+    # fig_consumption.show()
 
 df = pd.DataFrame(list(res_dict.items()), columns=['path', 'mape'])
 

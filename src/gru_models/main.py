@@ -1,6 +1,7 @@
 import io
 import os
 import ssl
+import shap
 import yaml
 import shutil
 import numpy as np
@@ -19,7 +20,7 @@ from tensorflow.keras.layers import (LSTM, Dense, Bidirectional, Dropout, Input,
                                      BatchNormalization, Reshape, Embedding, TimeDistributed, Flatten, Conv2D, GlobalAveragePooling2D)
 from tensorflow.keras import regularizers
 
-tf.keras.backend.clear_session()
+# tf.keras.backend.clear_session()
 
 home_path = os.getcwd()
 home_path = f"{home_path}/src/gru_models"
@@ -27,7 +28,7 @@ experiments_path = f"{home_path}/experiments"
 dir_name = datetime.now().strftime("exp_%Y-%m-%d_%H-%M-%S")
 BASE_PATH = f"{experiments_path}/{dir_name}"
 os.makedirs(BASE_PATH, exist_ok=True)
-params_file = f'{home_path}/params.yaml'
+params_file = f"{home_path}/params.yaml"
 cur_running_path = f"{home_path}/main.py"
 
 ssl._create_default_https_context = ssl._create_stdlib_context
@@ -51,10 +52,10 @@ class SaveBestWeights(Callback):
     def __init__(self):
         super(SaveBestWeights, self).__init__()
         self.best_weights = None
-        self.best_loss = float('inf')
+        self.best_loss = float("inf")
 
     def on_epoch_end(self, epoch, logs=None):
-        current_loss = logs.get('loss')
+        current_loss = logs.get("loss")
         if current_loss is None:
             return
         if current_loss < self.best_loss:
@@ -182,54 +183,113 @@ def make_predictions_lcr(x_input, x_future, points_per_call):
 
 
 params_path = os.path.join(home_path, params_file)
-params = yaml.load(open(params_path, 'r'), Loader=yaml.SafeLoader)
-lstm0_units = params['lstm0_units']
-lstm1_units = params['lstm1_units']
-lstm2_units = params['lstm2_units']
+params = yaml.load(open(params_path, "r"), Loader=yaml.SafeLoader)
+lstm0_units = params["lstm0_units"]
+lstm1_units = params["lstm1_units"]
+lstm2_units = params["lstm2_units"]
 regularizers_l2 = params["regularizers_l2"]
 recurrent_dropout_rate = params["recurrent_dropout_rate"]
 cnn0_units = params["cnn0_units"]
 cnn1_units = params["cnn1_units"]
 
-lag = params['lag']
-activation = params['activation']
-optimizer = params['optimizer']
-epochs = params['epochs']
-points_per_call = params['points_per_call']
-points_to_predict = params['points_to_predict']
+lag = params["lag"]
+activation = params["activation"]
+optimizer = params["optimizer"]
+epochs = params["epochs"]
+points_per_call = params["points_per_call"]
+points_to_predict = params["points_to_predict"]
 target_date_str = params["target_date_str"]
 
+model_type_chitecture = ["LSTM",]
 
-model_type_chitecture = ["LSTM", "Bi-LSTM"]
+# model_type_chitecture = ["LSTM", "Bi-LSTM", "CNN-BI-LSTM", "CNN-LSTM"]
+# model_type_chitecture = ["CNN-BI-LSTM", "CNN-LSTM"]
 
-# case_A = ['consumption','year', 'month', 'day','hour', 'minute']
-# case_A_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature']
-# case_A_lag_3h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_3h']
-# case_A_lag_6h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_6h']
-# case_A_lag_12h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_12h']
-# case_A_lag_15h_temperature = ['consumption','year', 'month', 'day','hour', 'minute', 'temperature_lag_15h']
+# model_type_chitecture = ["Bi-LSTM"]
 
-# case_A = ['consumption', 'year', 'month', 'day','hour', 'minute']
-case_B = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year", "is_working_hours", "season", "season_sin", "season_cos", "quarter", "quarter_sin", "quarter_cos", "moon_phase"]
-case_C = ['consumption', "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
-case_D = ['consumption', "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos"]
-case_E = ['consumption', "year", "month", "day", "week", "day_of_week", "hour", "minute", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
 
-'''
-'year', 'month', 'day', 'week',
-       'day_of_week', 'hour', 'minute', 'second', 'hour_sin', 'hour_cos',
-       'day_of_week_sin', 'day_of_week_cos', 'week_sin', 'week_cos',
-       'month_sin', 'month_cos', 'part_of_day', 'is_night', 'is_weekend',
-       'day_of_year', 'is_working_hours', 'season', 'season_sin', 'season_cos',
-       'quarter', 'quarter_sin', 'quarter_cos', 'moon_phase',
-'''
+# case_A = ["consumption","year", "month", "day","hour", "minute"]
+# case_A_temperature = ["consumption","year", "month", "day","hour", "minute", "temperature"]
+# case_A_lag_3h_temperature = ["consumption","year", "month", "day","hour", "minute", "temperature_lag_3h"]
+# case_A_lag_6h_temperature = ["consumption","year", "month", "day","hour", "minute", "temperature_lag_6h"]
+# case_A_lag_12h_temperature = ["consumption","year", "month", "day","hour", "minute", "temperature_lag_12h"]
+# case_A_lag_15h_temperature = ["consumption","year", "month", "day","hour", "minute", "temperature_lag_15h"]
+
+# Case_A = [
+#     "consumption",
+#     "hour",
+#     "hour_cos",
+#     "hour_sin",
+#     "minute",
+# ]
+
+# case_A = ["consumption", "year", "month", "day","hour", "minute"]
+#
+# case_B_temperature = ["consumption","year", "month", "day","hour", "minute", "temperature"]
+#
+# case_C = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos"]
+#
+# case_D = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "temperature"]
+
+case_E = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "part_of_day", "is_night", "is_weekend", "day_of_year"]
+
+case_F = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "part_of_day", "is_night", "is_weekend", "day_of_year", "temperature"]
+
+case_G = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
+
+case_H = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year","temperature"]
+
+case_I = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year", "is_working_hours", "season", "season_sin", "season_cos", "quarter", "quarter_sin", "quarter_cos", "moon_phase"]
+
+case_J = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year", "is_working_hours", "season", "season_sin", "season_cos", "quarter", "quarter_sin", "quarter_cos", "moon_phase","temperature"]
+
+case_K = ["consumption", "day", "day_of_week", "day_of_year", "hour", "hour_cos", "hour_sin", "is_night", "is_working_hours", "minute", "month", "month_cos", "month_sin", "moon_phase", "season", "season_cos", "season_sin", "week", "week_cos", "year"]
+
+case_L = ["consumption", "day", "day_of_week", "day_of_year", "hour", "hour_cos", "hour_sin", "is_night", "is_working_hours", "minute", "month", "month_cos", "month_sin", "moon_phase", "season", "season_cos", "season_sin", "week", "week_cos", "year", "temperature"]
+
+"""
+"year", "month", "day", "week",
+       "day_of_week", "hour", "minute", "second", "hour_sin", "hour_cos",
+       "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos",
+       "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend",
+       "day_of_year", "is_working_hours", "season", "season_sin", "season_cos",
+       "quarter", "quarter_sin", "quarter_cos", "moon_phase",
+"""
+
+Case_A_new = ["consumption", "year", "week", "day_of_week", "hour", "minute", "second"]
+
+case_previous_better_res = ['consumption', 'week', 'day_of_week', 'hour', 'minute', 'hour_sin', 'hour_cos', 'day_of_week_sin', 'day_of_week_cos', 'week_sin', 'week_cos']
+case_C_new = ["consumption", "year", "week", "day_of_week", "hour", "minute", "hour_cos", "week_cos"]
+Case_G_new = ["consumption", "year", "week", "day_of_week", "hour", "minute", "hour_cos", "week_cos", "part_of_day", "is_night", "is_weekend", "day_of_year"]
+Case_M = ["consumption", "year", "week", "day_of_week", "hour", "minute", "hour_cos", "week_cos", "is_working_hours"]
+case_C_old = ['consumption',  'week', 'day_of_week', 'hour', 'minute', 'hour_cos', 'week_cos']
+
+Case_0 = ["consumption"]
+Case_A = ["consumption", "year", "month", "day","hour", "minute"]
+Case_B = ["consumption", "year", "week", "day_of_week", "hour"]
+Case_C = ["consumption", "year", "week", "day_of_week", "hour", "is_working_hours"]
+Case_D = ["consumption", "year", "week", "day_of_week", "hour", "part_of_day", "is_night", "is_weekend", "day_of_year"]
+
+
+# my_case = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year", "is_working_hours", "season"]
+my_case = ["consumption", "year", "month", "day", "week", "day_of_week", "hour", "minute", "hour_sin", "hour_cos", "day_of_week_sin", "day_of_week_cos", "week_sin", "week_cos", "month_sin", "month_cos", "part_of_day", "is_night", "is_weekend", "day_of_year", "is_working_hours"]
+# my_case = ["consumption", "hour", "hour_cos","hour_sin","day", "minute", "is_working_hours"]
 
 train_col_dict = {
-    # 'case_A': case_A,
-    "case_B": case_B,
-    # 'case_C': case_C,
-    # "case_D": case_D,
-    # 'case_E': case_E,
+    "my_case": my_case,
+    # "Case_A": Case_A,
+    # "Case_B": Case_B,
+    # "Case_C": Case_C,
+    # "Case_D": Case_D,
+    # "case_previous_better_res": case_previous_better_res,
+    # "case_C_old": case_C_old,
+    # "case_F": case_F,
+    # "case_G": case_G,
+    # "case_H": case_H,
+    # "case_I": case_I,
+    # "case_J": case_J,
+    # "case_K": case_K,
+    # "case_L": case_L,
 
 
 }
@@ -243,16 +303,18 @@ train_col_dict = {
 
 
 experements = {
-    # 'Australia Bundoora': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTl3ZMKUEqYeXJe1b8A4IbfYIKjWlm0lR61glDoXOEfHxsmDUv1ZZ2IK2GpjkH2fZ6fvX3NaCOryqzW/pub?gid=751874949&single=true&output=csv',
-    # 'Australia Albury-Wodonga': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQmRJCXCBp-qsY4LQrf8x_zJax_5FAnZDl6-sv1zje9m0pCM7hore-cjS3zlzJezgHIm6h81KY1hsEz/pub?gid=1184660391&single=true&output=csv',
-    # 'Australia Bendigo': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQgXCJsm0V7ylsqvzRzK_LHZzky0lABeXvRuiqRWzDumN1Y8i8xul-Ih1ERIU1v-C46AKISnOOzBmtb/pub?gid=1902219272&single=true&output=csv',
-    # 'Morocco Zone 1': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSgwB47qVFZcr1Aq--UWxZ6fDi9CGLZm-1i8QoMgfdaHUbV8EqSli3ayPxYYxD8kqfYYHD41uuNxbjZ/pub?gid=1952392108&single=true&output=csv',
-    # 'Morocco Zone 2': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQT1DfqAB5Yec8MIQ_E5A8w-SXNcRmTwbXsv2W-ZT1ZcXN_G83BHlb6QBgnWkO-MpH3oVgfLoE0SnLx/pub?gid=1952392108&single=true&output=csv',
-    # 'Morocco Zone 3': 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQSHw5k7n3_RM6ksGbvdQJsa1i9-zF-18CFLCFnXFkCxQwqLcQ4Wu2_8EF2H1lF02ih2NLL9BDecFzQ/pub?gid=1952392108&single=true&output=csv',
-    # "load_consumption_2025": 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRj0_FRhEl3AuDjtTSeI2IHHH4qpEirHLnBFSu6UBebdnHpDkdJvzDS6pBKSlPAfzxHgXloFfFFv0vW/pub?gid=167706239&single=true&output=csv',
-    "load_consumption_temp": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRilfR_8jYrc_n4nhWtSTkLJ3wxhsoNpMAza1ympr5nkiX_dTKuzOMMxVvDLntjGD-lngpFZmaSd0pr/pub?gid=1656562660&single=true&output=csv",
-    # "load_consumption_real": "load_consumption_real"
+    # "Australia Bundoora": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTl3ZMKUEqYeXJe1b8A4IbfYIKjWlm0lR61glDoXOEfHxsmDUv1ZZ2IK2GpjkH2fZ6fvX3NaCOryqzW/pub?gid=751874949&single=true&output=csv",
+    # "Australia Albury-Wodonga": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQmRJCXCBp-qsY4LQrf8x_zJax_5FAnZDl6-sv1zje9m0pCM7hore-cjS3zlzJezgHIm6h81KY1hsEz/pub?gid=1184660391&single=true&output=csv",
+    # "Australia Bendigo": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQgXCJsm0V7ylsqvzRzK_LHZzky0lABeXvRuiqRWzDumN1Y8i8xul-Ih1ERIU1v-C46AKISnOOzBmtb/pub?gid=1902219272&single=true&output=csv",
+    # "Morocco Zone 1": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSgwB47qVFZcr1Aq--UWxZ6fDi9CGLZm-1i8QoMgfdaHUbV8EqSli3ayPxYYxD8kqfYYHD41uuNxbjZ/pub?gid=1952392108&single=true&output=csv",
+    # "Morocco Zone 2": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQT1DfqAB5Yec8MIQ_E5A8w-SXNcRmTwbXsv2W-ZT1ZcXN_G83BHlb6QBgnWkO-MpH3oVgfLoE0SnLx/pub?gid=1952392108&single=true&output=csv",
+    # "Morocco Zone 3": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSHw5k7n3_RM6ksGbvdQJsa1i9-zF-18CFLCFnXFkCxQwqLcQ4Wu2_8EF2H1lF02ih2NLL9BDecFzQ/pub?gid=1952392108&single=true&output=csv",
+    # "load_consumption_temp": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRFF6SXvGbQgQG1bh0hwbXgVWpUU_UG8OQAVhHcNAcAFT5x-XoIYxMAeF-goym6_wNhJEwQd3iGHp9b/pub?gid=791211028&single=true&output=csv",
+    "load_consumption_real": "load_consumption_real"
 }
+
+# df_all_data.to_csv('/Users/nikitasavvin/Desktop/PhD/experiments-on-models/src/arima_model/experiments/b.csv')
+
 
 
 os.makedirs(BASE_PATH, exist_ok=True)
@@ -271,44 +333,84 @@ for model_type in model_type_chitecture:
         if not os.path.exists(dir):
             os.makedirs(dir)
 
-        destination_params = os.path.join(dir, 'params.yaml')
+        destination_params = os.path.join(dir, "params.yaml")
         shutil.copy(params_file, destination_params)
 
-        destination_snapshot = os.path.join(dir, 'snapshot_main.py')
+        destination_snapshot = os.path.join(dir, "snapshot_main.py")
         shutil.copy(cur_running_path, destination_snapshot)
 
         for experement_name, csv_train_data in experements.items():
-            df_all_data = pd.read_csv(csv_train_data)
-            # df_all_data = fetch_data_from_db()
+            if experement_name == "load_consumption_real":
+                df_all_data = fetch_data_from_db()
+                df_all_data = df_all_data.rename(columns={"datetime": "Datetime"})
+                df_all_data.to_csv('/Users/nikitasavvin/Desktop/PhD/experiments-on-models/src/arima_model/experiments/b.csv')
+                last = 288*62
+                df_all_data = df_all_data.iloc[-last:]
+                print(df_all_data)
+            else:
+                df_all_data = pd.read_csv(csv_train_data)
 
-            df_index = df_all_data.copy()
-            df_index["time"] = pd.to_datetime(df_index["time"])
-            target_date = pd.to_datetime(target_date_str)
-            df_index["time_diff"] = (df_index["time"] - target_date).abs()
-            nearest_index = df_index["time_diff"].idxmin()
-            print(f'>>> nearest_index = {nearest_index}')
-            df_all_data = df_all_data.iloc[:nearest_index+1]
-            print(df_all_data)
+                # df_all_data = csv_train_data
+
+            if experement_name == "load_consumption_temp":
+                df_all_data = df_all_data.rename(columns={"time": "Datetime"})
+                # df_all_data = fetch_data_from_db()
 
 
-            df_all_data = df_all_data.rename(columns={"time": "Datetime"})
+                df_index = df_all_data.copy()
+                target_date = pd.to_datetime("2023-12-18 08:20:00")
+                df_index["Datetime"] = pd.to_datetime(df_index["Datetime"])
 
-            df_all_data['Datetime'] = pd.to_datetime(df_all_data['Datetime']).apply(lambda x: x.replace(second=0))
+                df_index["time_diff"] = (df_index["Datetime"] - target_date).abs()
 
-            df_all_data = df_all_data.sort_values(by='Datetime')
+                nearest_index = df_index["time_diff"].idxmin() - 1
 
-            df_all_data['Datetime'] = df_all_data['Datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
-            df_all_data = df_all_data.rename(columns={'load_consumption': 'consumption'})
+                date_start = pd.to_datetime("2024-10-01 00:00:00")
 
-            json_list_df = df_all_data.to_dict(orient='records')
+                df_index["time_diff"] = (df_index["Datetime"] - date_start).abs()
+
+                start_index = df_index["time_diff"].idxmin()
+
+                df_all_data = df_all_data.iloc[: nearest_index]
+
+
+            # df_all_data = df_all_data.iloc[start_index: nearest_index]
+            #
+            # df_all_data = df_all_data[
+            #     (df_all_data["datetime"].dt.time >= pd.to_datetime("17:30").time()) &
+            #     (df_all_data["datetime"].dt.time <= pd.to_datetime("22:00").time())
+            #     ]
+
+
+            # df_index = df_all_data.copy()
+            # df_index["time"] = pd.to_datetime(df_index["time"])
+            # target_date = pd.to_datetime(target_date_str)
+            # df_index["time_diff"] = (df_index["time"] - target_date).abs()
+            # nearest_index = df_index["time_diff"].idxmin()
+            # print(f">>> nearest_index = {nearest_index}")
+            # df_all_data = df_all_data.iloc[:nearest_index+1]
+            # print(df_all_data)
+
+
+            df_all_data["Datetime"] = pd.to_datetime(df_all_data["Datetime"]).apply(lambda x: x.replace(second=0))
+
+            df_all_data = df_all_data.sort_values(by="Datetime")
+
+            df_all_data["Datetime"] = df_all_data["Datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
+            df_all_data = df_all_data.rename(columns={"load_consumption": "consumption"})
+
+            df_all_data = df_all_data[["Datetime", "consumption"]]
+
+            json_list_df = df_all_data.to_dict(orient="records")
 
             df_all_data_norm, min_val, max_val = vectorization_request(
-                col_time='Datetime',
+                col_time="Datetime",
                 col_target="consumption",
                 json_list_df=json_list_df
             )
+
             print(df_all_data_norm.head(3))
-            print(f'cols = {df_all_data_norm.columns}')
+            print(f"cols = {df_all_data_norm.columns}")
 
             # TODO Дата с которой делаем прогноз на сутки вперед ------------------------------------------------------------------
 
@@ -319,8 +421,8 @@ for model_type in model_type_chitecture:
 
             # TODO Расчет LCR ------------------------------------------------------------------------------------------------------
 
-            # df_all_data_norm['lcr'] = (df_all_data_norm['consumption'].shift(1) - df_all_data_norm['consumption']) / df_all_data_norm['consumption']
-            # df_all_data_norm['lcr'] = df_all_data_norm['lcr'].shift(7)
+            # df_all_data_norm["lcr"] = (df_all_data_norm["consumption"].shift(1) - df_all_data_norm["consumption"]) / df_all_data_norm["consumption"]
+            # df_all_data_norm["lcr"] = df_all_data_norm["lcr"].shift(7)
             # df_all_data_norm = df_all_data_norm[8:]
             # df_all_data_norm = df_all_data_norm.reset_index()
             #
@@ -344,14 +446,14 @@ for model_type in model_type_chitecture:
             if not os.path.exists(experiment_dir):
                 os.makedirs(experiment_dir)
 
-            tf.keras.backend.clear_session()
+            # tf.keras.backend.clear_session()
 
-            col_for_train_dir = os.path.join(dir, 'col_for_train.txt')
+            col_for_train_dir = os.path.join(dir, "col_for_train.txt")
 
-            with open(col_for_train_dir, 'w') as file:
+            with open(col_for_train_dir, "w") as file:
                 file.write(str(col_for_train))
 
-            flag = f'>>> Current model - {model_type} Case: {dir_name} <<<'
+            flag = f">>> Current model - {model_type} Case: {dir_name} <<<"
             print("-"*len(flag))
             print(flag)
             print("-"*len(flag))
@@ -374,12 +476,12 @@ for model_type in model_type_chitecture:
 
             df_test = df.iloc[train_index + 1:]
             df_true = df_test.copy()
-            df_test['consumption'] = None
+            df_test["consumption"] = None
             df_forecast = df_test.copy()
             x_input = create_x_input(df_train, lag)
             df_test_no_lcr = df_test.copy()
-            if 'lcr' in col_for_train:
-                df_test_no_lcr['lcr'] = None
+            if "lcr" in col_for_train:
+                df_test_no_lcr["lcr"] = None
             x_future = df_test_no_lcr.values
             n_features = values.shape[1]
 
@@ -395,38 +497,41 @@ for model_type in model_type_chitecture:
             # TODO ---------BI-LSTM model------------------------------------------------------------------------------------------
 
 
-            if model_type == 'Bi-LSTM':
+            if model_type == "Bi-LSTM":
                 bi_lstm_model = Sequential()
 
                 bi_lstm_model.add(Input(shape=(lag, n_features)))
 
-                bi_lstm_model.add(Bidirectional(LSTM(lstm0_units, activation='softplus',recurrent_dropout=recurrent_dropout_rate, return_sequences=True)))
+                bi_lstm_model.add(Bidirectional(LSTM(lstm0_units, activation="softplus",recurrent_dropout=recurrent_dropout_rate, return_sequences=True)))
                 bi_lstm_model.add(Bidirectional(LSTM(lstm1_units, activation=activation, recurrent_dropout=recurrent_dropout_rate, return_sequences=True)))
                 bi_lstm_model.add(Bidirectional(LSTM(lstm2_units, activation=activation, recurrent_dropout=recurrent_dropout_rate)))
-                bi_lstm_model.add(Dense(points_per_call, activation='linear', kernel_regularizer=regularizers.l2(regularizers_l2)))
+                bi_lstm_model.add(Dense(points_per_call, activation="linear", kernel_regularizer=regularizers.l2(regularizers_l2)))
 
-                bi_lstm_model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae'])
+                # learning_rate = 0.01
+                #
+                # optimizer = Adam(learning_rate=learning_rate)
+                bi_lstm_model.compile(optimizer=optimizer, loss="mean_squared_error", metrics=["mae"])
                 model = bi_lstm_model
 
             # TODO ---------LSTM model----------------------------------------------------------------------------------------------
 
-            if model_type == 'LSTM':
+            if model_type == "LSTM":
                 lstm_model = Sequential()
 
-                lstm_model.add(LSTM(lstm0_units, activation='softplus', return_sequences=True, recurrent_dropout=recurrent_dropout_rate))
+                lstm_model.add(LSTM(lstm0_units, activation="softplus", return_sequences=True, recurrent_dropout=recurrent_dropout_rate))
                 lstm_model.add(LSTM(lstm1_units, activation=activation, return_sequences=True, recurrent_dropout=recurrent_dropout_rate))
                 lstm_model.add(LSTM(lstm2_units, activation=activation, recurrent_dropout=recurrent_dropout_rate))
 
-                lstm_model.add(Dense(points_per_call, activation='linear', kernel_regularizer=regularizers.l2(regularizers_l2)))
+                lstm_model.add(Dense(points_per_call, activation="linear", kernel_regularizer=regularizers.l2(regularizers_l2)))
 
-                lstm_model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mae'])
+                lstm_model.compile(optimizer=optimizer, loss="mean_squared_error", metrics=["mae"])
 
                 model = lstm_model
 
 
             # TODO ---------CNN-LSTM model------------------------------------------------------------------------------------------
 
-            if model_type == 'CNN-LSTM':
+            if model_type == "CNN-LSTM":
 
                 cnn_lstm_model = Sequential()
 
@@ -436,19 +541,19 @@ for model_type in model_type_chitecture:
                 cnn_lstm_model.add(Conv1D(filters=cnn1_units, kernel_size=1,  activation=activation))
                 cnn_lstm_model.add(MaxPooling1D(pool_size=1))
 
-                cnn_lstm_model.add(LSTM(lstm0_units, activation='softplus', return_sequences=True, recurrent_dropout=recurrent_dropout_rate))
+                cnn_lstm_model.add(LSTM(lstm0_units, activation="softplus", return_sequences=True, recurrent_dropout=recurrent_dropout_rate))
                 cnn_lstm_model.add(LSTM(lstm1_units, activation=activation, return_sequences=True, recurrent_dropout=recurrent_dropout_rate))
                 cnn_lstm_model.add(LSTM(lstm2_units, activation=activation, recurrent_dropout=recurrent_dropout_rate))
 
-                cnn_lstm_model.add(Dense(points_per_call, activation='linear', kernel_regularizer=regularizers.l2(regularizers_l2)))
+                cnn_lstm_model.add(Dense(points_per_call, activation="linear", kernel_regularizer=regularizers.l2(regularizers_l2)))
 
-                cnn_lstm_model.compile(optimizer=optimizer, loss='mean_squared_error', metrics=['mae'])
+                cnn_lstm_model.compile(optimizer=optimizer, loss="mean_squared_error", metrics=["mae"])
                 model = cnn_lstm_model
 
 
             # # TODO ---------CNN-BI-LSTM model---------------------------------------------------------------------------------------
 
-            if model_type == 'CNN-BI-LSTM':
+            if model_type == "CNN-BI-LSTM":
                 cnn_bi_lstm_model = Sequential()
                 cnn_lstm_model = Sequential()
                 cnn_lstm_model.add(Conv1D(filters=cnn0_units, kernel_size=1, activation=activation, input_shape=(lag, n_features)))
@@ -457,23 +562,51 @@ for model_type in model_type_chitecture:
                 cnn_lstm_model.add(Conv1D(filters=cnn1_units, kernel_size=1,  activation=activation))
                 cnn_lstm_model.add(MaxPooling1D(pool_size=1))
 
-                cnn_bi_lstm_model.add(Bidirectional(LSTM(lstm0_units, activation='softplus',recurrent_dropout=recurrent_dropout_rate, return_sequences=True)))
+                cnn_bi_lstm_model.add(Bidirectional(LSTM(lstm0_units, activation="softplus",recurrent_dropout=recurrent_dropout_rate, return_sequences=True)))
                 cnn_bi_lstm_model.add(Bidirectional(LSTM(lstm1_units, activation=activation, recurrent_dropout=recurrent_dropout_rate, return_sequences=True)))
                 cnn_bi_lstm_model.add(Bidirectional(LSTM(lstm2_units, activation=activation, recurrent_dropout=recurrent_dropout_rate)))
 
-                cnn_bi_lstm_model.add(Dense(points_per_call, activation='linear', kernel_regularizer=regularizers.l2(regularizers_l2)))
+                cnn_bi_lstm_model.add(Dense(points_per_call, activation="linear", kernel_regularizer=regularizers.l2(regularizers_l2)))
 
-                cnn_bi_lstm_model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae'])
+                cnn_bi_lstm_model.compile(optimizer="adam", loss="mean_squared_error", metrics=["mae"])
 
                 model = cnn_bi_lstm_model
 
 
             # TODO Обучение --------------------------------------------------------------------------------------------------------
-            history = model.fit(X, y, epochs=epochs, verbose=1, callbacks=[save_best_weights_callback])
+            history = model.fit(X, y, epochs=epochs, verbose=1)
             model_name = "italy_case_model_2025_test.keras"
             model_save_path = f"{experiment_dir}/{model_name}"
 
             model.save(model_save_path)
+
+
+            # lstm_layer = model.layers[1]  # Берем первый LSTM-слой (индекс может отличаться)
+            # weights = lstm_layer.get_weights()
+            # # weights, recurrent_weights, biases = lstm_layer.get_weights()
+            # weights_fwd, recurrent_weights_fwd, biases_fwd, weights_bwd, recurrent_weights_bwd, biases_bwd = weights
+            #
+            #
+            # print("="*100)
+            #
+            # print(f"weights_fwd = {weights_fwd}")
+            # print(f"recurrent_weights_fwd = {recurrent_weights_fwd}")
+            # print(f"biases_fwd = {biases_fwd}")
+            # print(f"weights_bwd = {weights_bwd}")
+            # print(f"recurrent_weights_bwd = {recurrent_weights_bwd}")
+            # print(f"biases_bwd = {biases_bwd}")
+
+
+            # print("="*100)
+
+            # feature_idx = 3  # Задаем индекс признака, который хотим изменить (0, 1, ..., features-1)
+            # new_value = 1  # Задаем новое значение веса
+            #
+            # weights[feature_idx, :] = new_value
+            #
+            # lstm_layer.set_weights([weights, recurrent_weights, biases])
+            #
+            # print(f"Веса для фичи {feature_idx} успешно изменены на {new_value}!")
 
 
             # TODO Прогноз ---------------------------------------------------------------------------------------------------------
@@ -483,15 +616,15 @@ for model_type in model_type_chitecture:
 
             x_input = create_x_input(df_train, lag)
             x_input = x_input.reshape((1, lag, n_features))
-            if 'lcr' in col_for_train:
+            if "lcr" in col_for_train:
                 predict_values = make_predictions_lcr(x_input, x_future, points_per_call)
             else:
                 predict_values = make_predictions(x_input, x_future, points_per_call)
 
             predict_values = np.array(predict_values).flatten()
 
-            df_forecast['consumption'] = predict_values
-            df_forecast = replace_zeros_with_average(df_forecast, 'consumption')
+            df_forecast["consumption"] = predict_values
+            df_forecast = replace_zeros_with_average(df_forecast, "consumption")
 
             if len(diff_cols) > 0:
                 for col in diff_cols:
@@ -499,9 +632,9 @@ for model_type in model_type_chitecture:
 
             df_forecast[col] = df_true_all_col[col]
 
-            json_list_df = df_forecast.to_dict(orient='records')
+            json_list_df = df_forecast.to_dict(orient="records")
             df_comparative = decoding_request(
-                col_time='Datetime',
+                col_time="Datetime",
                 col_target="consumption",
                 json_list_norm_df=json_list_df,
                 min_val=min_val,
@@ -509,21 +642,25 @@ for model_type in model_type_chitecture:
             )
 
             df_predict = df_comparative.copy()
-            df_predict = df_predict[["consumption", 'Datetime']]
+            df_predict = df_predict[["consumption", "Datetime"]]
             path = f"{experiment_dir}/predict.xlsx"
             df_predict.to_excel(path, index=False)
 
-            json_list_df = df_true_all_col.to_dict(orient='records')
+            json_list_df = df_true_all_col.to_dict(orient="records")
             df_true = decoding_request(
-                col_time='Datetime',
+                col_time="Datetime",
                 col_target="consumption",
                 json_list_norm_df=json_list_df,
                 min_val=min_val,
                 max_val=max_val
             )
 
-            y_true = df_true['consumption']
-            y_pred = df_comparative['consumption']
+            # df_comparative["consumption"] = df_comparative["consumption"] ** 1.2
+            # df_comparative["consumption"] = np.sign(df_comparative["consumption"]) * (np.abs(df_comparative["consumption"]) ** 1.5)
+
+
+            y_true = df_true["consumption"]
+            y_pred = df_comparative["consumption"]
 
             # TODO Метрики ---------------------------------------------------------------------------------------------------------
 
@@ -539,7 +676,7 @@ for model_type in model_type_chitecture:
             else:
                 rmse, r2, mae, mape, wmape = calculate_metrics(y_true=y_true, y_pred=y_pred)
 
-                print(f'MAPE = {mape}')
+                print(f"MAPE = {mape}")
 
                 metrix_dict = {
                     "RMSE": rmse,
@@ -551,7 +688,7 @@ for model_type in model_type_chitecture:
 
             res_dict[experiment_dir] = mape
 
-            df_metrics = pd.DataFrame(list(metrix_dict.items()), columns=['Metric', 'Value'])
+            df_metrics = pd.DataFrame(list(metrix_dict.items()), columns=["Metric", "Value"])
 
             output_path = f"{experiment_dir}/metrics.xlsx"
             df_metrics.to_excel(output_path, index=False)
@@ -570,23 +707,96 @@ for model_type in model_type_chitecture:
 
             # TODO Отрисовка -------------------------------------------------------------------------------------------------------
 
-            fig_consumption = make_subplots(rows=1, cols=1, subplot_titles=['consumption_real vs consumption_predict'])
+            title = f"Model - {model_type} | Case - {dir_name} | Dataset - {experement_name}"
+
+            fig_consumption = make_subplots(rows=1, cols=1, subplot_titles=[title])
 
             fig_consumption.add_trace(
-                go.Scatter(x=df_true['Datetime'], y=df_true['consumption'], mode='lines', name='consumption_real', line=dict(color='blue')), row=1,
+                go.Scatter(x=df_true["Datetime"], y=df_true["consumption"], mode="lines", name="consumption_real", line=dict(color="blue")), row=1,
                 col=1)
-            fig_consumption.add_trace(go.Scatter(x=df_comparative['Datetime'], y=df_comparative['consumption'], mode='lines', name='consumption_predict',
-                                                 line=dict(color='orange')), row=1, col=1)
+            fig_consumption.add_trace(go.Scatter(x=df_comparative["Datetime"], y=df_comparative["consumption"], mode="lines", name="consumption_predict",
+                                                 line=dict(color="orange")), row=1, col=1)
 
             fig_consumption.add_trace(
                 go.Scatter(
                     x=[None], y=[None],
-                    mode='lines',
-                    line=dict(color='rgba(0,0,0,0)'),
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)"),
                     showlegend=True,
-                    name=f'📌 MAPE = {round(mape, 2)} %'
+                    name=f"MAPE = {round(mape, 3)} %"
                 )
             )
+            rmse, r2, mae, mape, wmape
+            fig_consumption.add_trace(
+                go.Scatter(
+                    x=[None], y=[None],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)"),
+                    showlegend=True,
+                    name=f" R = {round(r2, 3)} %"
+                )
+            )
+
+            fig_consumption.add_trace(
+                go.Scatter(
+                    x=[None], y=[None],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)"),
+                    showlegend=True,
+                    name=f" RMSE = {round(rmse, 3)} %"
+                )
+            )
+
+            fig_consumption.add_trace(
+                go.Scatter(
+                    x=[None], y=[None],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)"),
+                    showlegend=True,
+                    name=f" MAE = {round(mae, 3)} %"
+                )
+            )
+
+            fig_consumption.add_trace(
+                go.Scatter(
+                    x=[None], y=[None],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)"),
+                    showlegend=True,
+                    name=f" WMAPE = {round(wmape, 3)} %"
+                )
+            )
+
+            fig_consumption.add_trace(
+                go.Scatter(
+                    x=[None], y=[None],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)"),
+                    showlegend=True,
+                    name=f"-------------------"
+                )
+            )
+            fig_consumption.add_trace(
+                go.Scatter(
+                    x=[None], y=[None],
+                    mode="lines",
+                    line=dict(color="rgba(0,0,0,0)"),
+                    showlegend=True,
+                    name=f">> Cols for train <<:"
+                )
+            )
+            for col in col_for_train:
+                fig_consumption.add_trace(
+                    go.Scatter(
+                        x=[None], y=[None],
+                        mode="lines",
+                        line=dict(color="rgba(0,0,0,0)"),
+                        showlegend=True,
+                        name=f" - {col}"
+                    )
+                )
+
+
             template = "presentation"
 
             fig_consumption.update_layout(template="presentation")
@@ -596,6 +806,49 @@ for model_type in model_type_chitecture:
             fig_consumption.write_html(output_path)
 
 
-df = pd.DataFrame(list(res_dict.items()), columns=['path', 'mape'])
+df = pd.DataFrame(list(res_dict.items()), columns=["path", "mape"])
 
-df.to_csv(f'{BASE_PATH}/results.csv', index=False)
+df_new = df.copy()
+cases = []
+datasets = []
+paths_norm = []
+R_squareds = []
+RMSEs = []
+MAEs = []
+WMAPEs = []
+
+for path in df_new["path"]:
+    path_list = path.split('/')
+    path_norm = path_list[9:]
+    path_relative = path_list[10:]
+    case = path_norm[2]
+    cases.append(case)
+    dataset = path_norm[3]
+    datasets.append(dataset)
+    path_new = "/".join(path_norm)
+    path_relative = "/".join(path_relative)
+    path_to_metrix = f"{BASE_PATH}/{path_relative}/metrics.xlsx"
+    df_metrix = pd.read_excel(path_to_metrix)
+    R_squared = df_metrix[df_metrix["Metric"] == "R-squared"]["Value"].values[0]
+    RMSE = df_metrix[df_metrix["Metric"] == "RMSE"]["Value"].values[0]
+    MAE = df_metrix[df_metrix["Metric"] == "MAE"]["Value"].values[0]
+    WMAPE = df_metrix[df_metrix["Metric"] == "WMAPE"]["Value"].values[0]
+    R_squareds.append(R_squared)
+    RMSEs.append(RMSE)
+    MAEs.append(MAE)
+    WMAPEs.append(WMAPE)
+
+    paths_norm.append(path_new)
+
+df_new["path"] = paths_norm
+df_new["case"] = cases
+df_new["dataset"] = datasets
+df_new["R-squared"] = R_squareds
+df_new["RMSE"] = RMSEs
+df_new["MAE"] = MAEs
+df_new["WMAPE"] = WMAPEs
+
+
+df_new.to_excel(f"{BASE_PATH}/results.xlsx", index=False)
+df_new.to_csv(f"{BASE_PATH}/results.csv", index=False)
+

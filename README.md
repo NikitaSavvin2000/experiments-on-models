@@ -109,3 +109,46 @@ pip install pandas
 ```
 ### 8. Шаблон для создания новых экспериментов брать из experiments-on-models/src/template!
 
+
+```asciidoc
+sudo nano /etc/nginx/sites-available/horizontsd.ru
+```
+
+```asciidoc
+server {
+listen 80;
+server_name horizontsd.ru;
+
+    location / {
+        proxy_pass http://localhost:8601/;
+        proxy_redirect http://localhost:8601/ /;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+    }
+}
+
+server {
+listen 80;
+server_name www.horizontsd.ru;
+
+    return 301 $scheme://horizontsd.ru$request_uri;
+}
+
+```
+
+```asciidoc
+sudo systemctl start nginx
+
+sudo ln -s /etc/nginx/sites-available/horizontsd.ru /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+```asciidoc
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+

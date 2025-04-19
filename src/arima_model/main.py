@@ -1,71 +1,20 @@
-import os
-import ssl
-import shutil
-
-from datetime import datetime
-from utils.api_cals import vectorization_request, decoding_request, fetch_data_from_db
-import plotly.graph_objects as go
-
 import pandas as pd
-import statsmodels.api as sm
+import numpy as np
+import plotly.graph_objects as go
+from statsmodels.tsa.arima.model import ARIMA
+from sklearn.metrics import mean_absolute_percentage_error, r2_score
+from utils.api_cals import vectorization_request, decoding_request, fetch_data_from_db
 
-
-def cast_logger(message):
-    count = len(message) + 4
-    if count > 150:
-        count = 150
-    print('='*count)
-    print(f'>>> {message}')
-    print('='*count)
-
-
-ssl._create_default_https_context = ssl._create_stdlib_context
-
-home_path = os.getcwd()
-home_path = f"{home_path}/src/arima_model"
-experiments_path = f"{home_path}/experiments"
-dir_name = datetime.now().strftime("exp_%Y-%m-%d_%H-%M-%S")
-BASE_PATH = f"{experiments_path}/{dir_name}"
-os.makedirs(BASE_PATH, exist_ok=True)
-params_file = f'{home_path}/params.yaml'
-cur_running_path = f"{home_path}/main.py"
-
-
+# upload
 df = fetch_data_from_db()
+print(df)
+df['datetime'] = pd.to_datetime(df['datetime'], errors='coerce')
+df.sort_values('datetime', inplace=True)
+df["datetime"] = df["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
-df_to_eval = df.iloc[-288:]
-
-df_to_exog = df_to_eval.copy()
-df_to_exog['datetime'] = df_to_exog['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
-json_list_df = df_to_exog.to_dict(orient='records')
-message = "vectorization_request"
-cast_logger(message=message)
-df_vectorized_to_exog, min_val, max_val = vectorization_request(
-    col_time='datetime',
-    col_target="load_consumption",
-    json_list_df=json_list_df
-)
-
-df_vectorized_to_exog['datetime'] = pd.to_datetime(df_vectorized_to_exog['datetime'])
-df_vectorized_to_exog.set_index('datetime', inplace=True)
-
-
-
-df = df.iloc[:-288]
-df_features = df.copy()
-df['datetime'] = pd.to_datetime(df['datetime'])
-df.set_index('datetime', inplace=True)
-# df = df.asfreq('5T')
-
-
-df_features['datetime'] = df_features['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S')
-
-
-json_list_df = df_features.to_dict(orient='records')
-
-message = "vectorization_request"
-cast_logger(message=message)
+# vector
+json_list_df = df.to_dict(orient='records')
 
 df_vectorized, min_val, max_val = vectorization_request(
     col_time='datetime',
@@ -73,79 +22,48 @@ df_vectorized, min_val, max_val = vectorization_request(
     json_list_df=json_list_df
 )
 
-df_vectorized['datetime'] = pd.to_datetime(df_vectorized['datetime'])
-df_vectorized.set_index('datetime', inplace=True)
+#  train, evaluate
+train_size = len(df_vectorized) - 288
+df_train = df_vectorized.iloc[:train_size]
+df_evaluate = df_vectorized.iloc[train_size:]
 
-step = 288
-train = df['load_consumption']
-
-print(df_vectorized.describe)
-
-col_for_train = [
-    "year", "month", "day", "day_of_year", "week", "day_of_week", "hour", "hour_cos", "day_of_week_sin", "day_of_week_cos",  "minute", "part_of_day", "is_night",
-]
-exog = df_vectorized[col_for_train]
-
-from statsmodels.tsa.stattools import adfuller
-
-def find_best_d(train, max_d=2):
-    for d in range(max_d + 1):
-        test_series = train.diff(d).dropna() if d > 0 else train
-        p_value = adfuller(test_series)[1]
-        if p_value < 0.05:
-            print(f"Оптимальное d: {d}")
-            return d  # Считаем, что ряд стационарный при p-value < 0.05
-    return max_d  # Если не нашли, возвращаем максимум
+# ARIMA - train
+external_features_train = df_train.drop(columns=['load_consumption', 'datetime'])
+model = ARIMA(df_train['load_consumption'], exog=external_features_train, order=(5,1,0))
+model_fit = model.fit()
 
 
-d = find_best_d(train)
+external_features_eval = df_evaluate.drop(columns=['load_consumption', 'datetime'])
+predictions = model_fit.forecast(steps=288, exog=external_features_eval)
 
-print(d)
-model = sm.tsa.ARIMA(train, order=(d,5,4), exog=exog)
+# metrics
+mape = mean_absolute_percentage_error(df_evaluate['load_consumption'], predictions)
+r2 = r2_score(df_evaluate['load_consumption'], predictions)
 
-message = "Learn model and do predict"
-cast_logger(message=message)
-arima_fit = model.fit()
+# predict
+fig_eval = go.Figure()
+fig_eval.add_trace(go.Scatter(x=df_evaluate['datetime'], y=df_evaluate['load_consumption'], mode='lines', name='Actual'))
+fig_eval.add_trace(go.Scatter(x=df_evaluate['datetime'], y=predictions, mode='lines', name='Forecast'))
+fig_eval.update_layout(title='Evaluation Forecast', xaxis_title='Time', yaxis_title='Load Consumption')
+fig_eval.show()
 
-future_exog = df_vectorized_to_exog[col_for_train]
+# real
+external_features_real = df_vectorized.drop(columns=['load_consumption', 'datetime']).iloc[-288:]
+predictions_real = model_fit.forecast(steps=288, exog=external_features_real)
 
-# forecast = arima_fit.forecast(steps=step)
-forecast = arima_fit.forecast(steps=step, exog=future_exog)
+# decode
+json_list_pred = pd.DataFrame({
+    'datetime': pd.date_range(start=df['datetime'].iloc[-1], periods=288, freq='H'),
+    'load_consumption': predictions_real
+}).to_dict(orient='records')
+df_decoded = decoding_request(col_time='datetime', col_target="load_consumption", json_list_norm_df=json_list_pred, min_val=min_val, max_val=max_val)
 
-future_dates = pd.date_range(df.index[-1], periods=step+1, freq='5T')[1:]
+# draw
+fig_real = go.Figure()
+fig_real.add_trace(go.Scatter(x=df_decoded['datetime'], y=df_decoded['load_consumption'], mode='lines', name='Forecast'))
+fig_real.update_layout(title='Real Forecast', xaxis_title='Time', yaxis_title='Load Consumption')
+fig_real.show()
 
-forecast_df = pd.DataFrame({'datetime': future_dates, 'forecast': forecast})
-forecast_df.set_index('datetime', inplace=True)
-
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=df_to_eval["datetime"], y=df_to_eval['load_consumption'], mode='lines', name="Исторические данные"))
-fig.add_trace(go.Scatter(x=forecast_df.index, y=forecast_df['forecast'], mode='lines', name="Прогноз", line=dict(color='red')))
-
-fig.update_layout(title="Прогноз потребления с помощью ARIMA", xaxis_title="Дата", yaxis_title="Потребление")
-fig.show()
-
-
-
-#
-# json_list_df = df.to_dict(orient='records')
-#
-# df_vectorized, min_val, max_val = vectorization_request(
-#     col_time='datetime',
-#     col_target="load_consumption",
-#     json_list_df=json_list_df
-# )
-#
-# print(df_vectorized)
-#
-# json_list_df = df_vectorized.to_dict(orient='records')
-# df_decoding = decoding_request(
-#     col_time='datetime',
-#     col_target="load_consumption",
-#     json_list_norm_df=json_list_df,
-#     min_val=min_val,
-#     max_val=max_val
-# )
-# print(df_decoding)
-#
-# destination_snapshot = os.path.join(BASE_PATH, 'snapshot_main.py')
-# shutil.copy(cur_running_path, destination_snapshot)
+print(f'MAPE: {mape:.4f}, R²: {r2:.4f}')
+fig_eval.write_image("results/evaluation_forecast.png")
+fig_real.write_image("results/real_forecast.png")
