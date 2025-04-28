@@ -1,0 +1,8 @@
+lag: 4
+points_per_call: 16
+epochs: 3
+batch_size: 32  # Added batch size parameter
+activation: 'relu'
+optimizer: 'adam'
+units: 128  # Match this value with d_model
+d_model: 128
